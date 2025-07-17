@@ -16,7 +16,7 @@ services:
     environment:
       # --- Application Environment Variables ---
       - BASE_WEBHOOK_URL=http://localhost:3000/localCallbackExample
-      - ENABLE_LOCAL_CALLBACK_EXAMPLE=TRUE
+      - ENABLE_LOCAL_CALLBACK_EXAMPLE=FALSE
       - MAX_ATTACHMENT_SIZE=50000000
       - SET_MESSAGES_AS_SEEN=FALSE
       - DISABLED_CALLBACKS=message_ack|message_reaction
@@ -30,7 +30,7 @@ services:
     volumes:
       - ./sessions:/usr/src/app/sessions # Keep this volume for your app data
     healthcheck:
-      test: CMD-SHELL curl -fs http://localhost:3000/ping | jq -e '.success == true'
+      test: ["CMD-SHELL", "curl -f http://localhost:3000/ping | jq -e '.success == true'"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -56,5 +56,5 @@ services:
       app:
         condition: service_started
 
-# volumes:                    
+# volumes:
 #  ssmtp_config:
