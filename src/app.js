@@ -1,18 +1,23 @@
 require('./routes') // Keep this line if it's needed for side effects in routes.js
 const express = require('express')
 const { routes } = require('./routes')
-const { maxAttachmentSize } = require('./config')
-const cors = require('cors');
+const { maxAttachmentSize, basePath, trustProxy } = require('./config')
 
 const app = express()
 
 // Initialize Express app
 app.disable('x-powered-by')
-app.use(cors({
-    origin: '*' // Allow requests from any origin
-  }));
+
+// Configure trust proxy for reverse proxy compatibility
+if (trustProxy) {
+  app.set('trust proxy', true)
+}
+
 app.use(express.json({ limit: maxAttachmentSize + 1000000 }))
 app.use(express.urlencoded({ limit: maxAttachmentSize + 1000000, extended: true }))
-app.use('/', routes) // Then apply your routes
+
+// Mount routes with configurable base path
+const mountPath = basePath || '/'
+app.use(mountPath, routes)
 
 module.exports = app

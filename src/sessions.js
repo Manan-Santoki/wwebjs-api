@@ -3,7 +3,7 @@ const fs = require('fs')
 const path = require('path')
 const sessions = new Map()
 const { baseWebhookURL, sessionFolderPath, maxAttachmentSize, setMessagesAsSeen, webVersion, webVersionCacheType, recoverSessions, chromeBin, headless, releaseBrowserLock } = require('./config')
-const { triggerWebhook, waitForNestedObject, isEventEnabled, sendMessageSeenStatus, sleep } = require('./utils')
+const { triggerWebhook, waitForNestedObject, isEventEnabled, sendMessageSeenStatus, sleep, patchWWebLibrary } = require('./utils')
 const { logger } = require('./logger')
 const { initWebSocketServer, terminateWebSocketServer, triggerWebSocket } = require('./websocket')
 
@@ -177,14 +177,18 @@ const setupSession = async (sessionId) => {
     }
 
     try {
+      client.once('ready', () => {
+        patchWWebLibrary(client).catch((err) => {
+          logger.error({ sessionId, err }, 'Failed to patch WWebJS library')
+        })
+      })
+      initWebSocketServer(sessionId)
+      initializeEvents(client, sessionId)
       await client.initialize()
     } catch (error) {
       logger.error({ sessionId, err: error }, 'Initialize error')
       throw error
     }
-
-    initWebSocketServer(sessionId)
-    initializeEvents(client, sessionId)
 
     // Save the session to the Map
     sessions.set(sessionId, client)
@@ -215,6 +219,20 @@ const initializeEvents = (client, sessionId) => {
         logger.warn({ sessionId }, 'Error occurred on browser page. Restoring')
         restartSession(sessionId)
       })
+      client.pupPage
+        .on('console', message => {
+          const type = message.type().substr(0, 3).toUpperCase()
+          logger.debug({ sessionId, type }, `Page console log: ${message.text()}`)
+        })
+        .on('requestfailed', request => {
+          const failure = request.failure()
+          if (failure) {
+            logger.error({ sessionId, url: request.url() }, `Page request failed: ${failure.errorText}`)
+          } else {
+            logger.error({ sessionId, url: request.url() }, 'Page request failed but no failure reason provided')
+          }
+        })
+        .on('pageerror', ({ message }) => logger.error({ sessionId, message }, 'Page error occurred'))
     }).catch(e => { })
   }
 
@@ -225,13 +243,13 @@ const initializeEvents = (client, sessionId) => {
     })
   }
 
-  if (isEventEnabled('authenticated')) {
+  client.on('authenticated', () => {
     client.qr = null
-    client.on('authenticated', () => {
+    if (isEventEnabled('authenticated')) {
       triggerWebhook(sessionWebhook, sessionId, 'authenticated')
       triggerWebSocket(sessionId, 'authenticated')
-    })
-  }
+    }
+  })
 
   if (isEventEnabled('call')) {
     client.on('call', (call) => {
@@ -376,18 +394,8 @@ const initializeEvents = (client, sessionId) => {
   }
 
   client.on('qr', (qr) => {
-    // by default QR code is being updated every 20 seconds
-    if (client.qrClearTimeout) {
-      clearTimeout(client.qrClearTimeout)
-    }
     // inject qr code into session
     client.qr = qr
-    client.qrClearTimeout = setTimeout(() => {
-      if (client.qr) {
-        logger.warn({ sessionId }, 'Removing expired QR code')
-        client.qr = null
-      }
-    }, 30000)
     if (isEventEnabled('qr')) {
       triggerWebhook(sessionWebhook, sessionId, 'qr', { qr })
       triggerWebSocket(sessionId, 'qr', { qr })
@@ -433,6 +441,13 @@ const initializeEvents = (client, sessionId) => {
     client.on('vote_update', (vote) => {
       triggerWebhook(sessionWebhook, sessionId, 'vote_update', { vote })
       triggerWebSocket(sessionId, 'vote_update', { vote })
+    })
+  }
+
+  if (isEventEnabled('code')) {
+    client.on('code', (code) => {
+      triggerWebhook(sessionWebhook, sessionId, 'code', { code })
+      triggerWebSocket(sessionId, 'code', { code })
     })
   }
 }

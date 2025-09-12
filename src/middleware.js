@@ -72,7 +72,11 @@ const sessionValidation = async (req, res, next) => {
 const rateLimiter = rateLimiting({
   limit: rateLimitMax,
   windowMs: rateLimitWindowMs,
-  message: "You can't make any more requests at the moment. Try again later"
+  message: "You can't make any more requests at the moment. Try again later",
+  // Use real client IP when behind reverse proxy
+  keyGenerator: (req) => {
+    return req.ip || req.connection.remoteAddress
+  }
 })
 
 const sessionSwagger = async (req, res, next) => {
@@ -214,6 +218,21 @@ const groupChatSwagger = async (req, res, next) => {
   next()
 }
 
+const channelSwagger = async (req, res, next) => {
+  /*
+    #swagger.tags = ['Channel Chat']
+    #swagger.responses[500] = {
+      description: "Server failure.",
+      content: {
+        "application/json": {
+          schema: { "$ref": "#/definitions/ErrorResponse" }
+        }
+      }
+    }
+  */
+  next()
+}
+
 module.exports = {
   sessionValidation,
   apikey,
@@ -224,5 +243,6 @@ module.exports = {
   messageSwagger,
   chatSwagger,
   groupChatSwagger,
+  channelSwagger,
   rateLimiter
 }
